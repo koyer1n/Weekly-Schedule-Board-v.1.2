@@ -4,57 +4,128 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Weekly Schedule Board</title>
-<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-storage-compat.js"></script>
     <script>
         const firebaseConfig = {
-  apiKey: "AIzaSyA9kO9d5wA2LKxdh6we6y1gM0-LuDKcVZ8",
-  authDomain: "weekly-schedule-board.firebaseapp.com",
-  databaseURL: "https://weekly-schedule-board-default-rtdb.firebaseio.com",
-  projectId: "weekly-schedule-board",
-  storageBucket: "weekly-schedule-board.appspot.com",  // ✅ Corrected
-  messagingSenderId: "518722521976",
-  appId: "1:518722521976:web:0cc9e0ea5d346bc014568d",
-  measurementId: "G-3CWB6TXY4G"
-};
+            apiKey: "AIzaSyA9kO9d5wA2LKxdh6we6y1gM0-LuDKcVZ8",
+            authDomain: "weekly-schedule-board.firebaseapp.com",
+            databaseURL: "https://weekly-schedule-board-default-rtdb.firebaseio.com",
+            projectId: "weekly-schedule-board",
+            storageBucket: "weekly-schedule-board.appspot.com",  // ✅ Corrected
+            messagingSenderId: "518722521976",
+            appId: "1:518722521976:web:0cc9e0ea5d346bc014568d",
+            measurementId: "G-3CWB6TXY4G"
+        };
 
 
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
-      console.log("Firebase initialized:", db);
+        const storage = firebase.storage();
+        console.log("Firebase initialized:", db);
 
     </script>
     <script>
         let isEditor = false;
+        const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
 
         function authenticate() {
             const password = prompt("Enter the password to edit:");
             if (password === "asparkofdecency") {
                 isEditor = true;
                 document.querySelectorAll('.editable').forEach(el => el.contentEditable = "true");
-document.getElementById("saveButton").classList.remove("hidden");
+                document.getElementById("saveButton").classList.remove("hidden");
 
+                // Show file upload buttons when in edit mode
+                days.forEach(day => {
+                    document.getElementById(`${day}-upload`).classList.remove("hidden");
+                });
             } else {
                 alert("Incorrect password.");
+            }
+        }
+
+        function handleFileUpload(day) {
+            const fileInput = document.getElementById(`${day}-file`);
+            fileInput.click();
+        }
+
+        function handleFileSelect(event, day) {
+            const files = event.target.files;
+            const imageContainer = document.getElementById(`${day}-images`);
+
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const reader = new FileReader();
+
+                reader.onload = function(e) {
+                    const imageData = e.target.result;
+                    const fileName = file.name;
+
+                    // Create image preview
+                    const previewDiv = document.createElement('div');
+                    previewDiv.className = 'image-item mb-2 flex items-center';
+                    previewDiv.innerHTML = `
+                        <span class="image-filename mr-2">${fileName}</span>
+                        <input type="hidden" class="image-data" value="${imageData}">
+                    `;
+
+                    imageContainer.appendChild(previewDiv);
+                    imageContainer.classList.remove('hidden');
+                };
+
+                reader.readAsDataURL(file);
             }
         }
 
         function saveSchedule() {
             if (!isEditor) return;
             const schedule = {};
+            const images = {};
+
+            // Save text content
             document.querySelectorAll(".day-box").forEach(box => {
                 schedule[box.id] = box.innerHTML;
             });
+
+            // Save images for each day
+            days.forEach(day => {
+                const dayImages = [];
+                const imageContainer = document.getElementById(`${day}-images`);
+
+                imageContainer.querySelectorAll('.image-item').forEach(item => {
+                    const fileName = item.querySelector('.image-filename').textContent;
+                    const imageData = item.querySelector('.image-data').value;
+
+                    dayImages.push({
+                        fileName: fileName,
+                        data: imageData
+                    });
+                });
+
+                images[day] = dayImages;
+            });
+
             const month = document.getElementById("month").innerText;
             const week = document.getElementById("week").innerText;
             const lastUpdated = new Date().toLocaleString();
 
-            db.ref("schedule").set({ schedule, month, week, lastUpdated }, (error) => {
+            db.ref("schedule").set({
+                schedule,
+                images,
+                month,
+                week,
+                lastUpdated
+            }, (error) => {
                 if (error) {
                     alert("Failed to save schedule.");
                 } else {
                     document.getElementById("lastUpdated").innerText = `Last Updated: ${lastUpdated}`;
                     alert("Schedule saved successfully.");
+
+                    // Refresh the page to enter view mode
+                    location.reload();
                 }
             });
         }
@@ -63,9 +134,39 @@ document.getElementById("saveButton").classList.remove("hidden");
             db.ref("schedule").on("value", snapshot => {
                 const data = snapshot.val();
                 if (data) {
+                    // Load text content
                     for (const [key, value] of Object.entries(data.schedule)) {
                         document.getElementById(key).innerHTML = value;
                     }
+
+                    // Load images
+                    if (data.images) {
+                        days.forEach(day => {
+                            const imageContainer = document.getElementById(`${day}-images`);
+                            imageContainer.innerHTML = '';
+
+                            if (data.images[day] && data.images[day].length > 0) {
+                                imageContainer.classList.remove('hidden');
+
+                                data.images[day].forEach(img => {
+                                    const imageItem = document.createElement('div');
+                                    imageItem.className = 'image-item mb-2';
+
+                                    // In view mode, show clickable filenames
+                                    imageItem.innerHTML = `
+                                        <span class="image-filename cursor-pointer text-blue-500 underline"
+                                              onclick="showImagePopup('${img.fileName}', '${img.data}')">${img.fileName}</span>
+                                        <input type="hidden" class="image-data" value="${img.data}">
+                                    `;
+
+                                    imageContainer.appendChild(imageItem);
+                                });
+                            } else {
+                                imageContainer.classList.add('hidden');
+                            }
+                        });
+                    }
+
                     document.getElementById("month").innerText = data.month;
                     document.getElementById("week").innerText = data.week;
                     document.getElementById("lastUpdated").innerText = `Last Updated: ${data.lastUpdated}`;
@@ -73,25 +174,123 @@ document.getElementById("saveButton").classList.remove("hidden");
             });
         }
 
-        window.onload = loadSchedule;
+        function showImagePopup(fileName, imageData) {
+            const popup = document.createElement('div');
+            popup.className = 'fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50';
+            popup.id = 'image-popup';
+            popup.onclick = closeImagePopup;
+
+            popup.innerHTML = `
+                <div class="bg-white p-4 rounded-lg max-w-4xl max-h-screen overflow-auto">
+                    <h3 class="text-xl font-bold mb-2">${fileName}</h3>
+                    <img src="${imageData}" alt="${fileName}" class="max-w-full">
+                </div>
+            `;
+
+            document.body.appendChild(popup);
+        }
+
+        function closeImagePopup() {
+            const popup = document.getElementById('image-popup');
+            if (popup) {
+                document.body.removeChild(popup);
+            }
+        }
+
+        // Initialize everything when the page loads
+        window.onload = function() {
+            loadSchedule();
+
+            // Set up file input listeners
+            days.forEach(day => {
+                const fileInput = document.getElementById(`${day}-file`);
+                fileInput.addEventListener('change', function(e) {
+                    handleFileSelect(e, day);
+                });
+            });
+        };
     </script>
     <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .image-item {
+            padding: 6px 10px;
+            background-color: #f3f4f6;
+            border-radius: 4px;
+            display: inline-block;
+            margin-right: 8px;
+        }
+    </style>
 </head>
 <body class="bg-gray-100 flex flex-col items-center p-6">
-    <h1 class="text-4xl font-bold mb-4">Weekly Schedule Board</h1>
-    <div class="mb-2 text-lg">Month: <span id="month" class="editable font-semibold">March</span></div>
-    <div class="mb-4 text-lg">Week: <span id="week" class="editable font-semibold">1</span></div>
-    <button onclick="authenticate()" class="px-4 py-2 bg-blue-500 text-white rounded mb-4">Edit</button>
-    <div class="flex flex-col bg-white p-6 rounded shadow-lg w-full max-w-lg">
-        <div class="text-center mb-4"><h2 class="text-xl font-bold">Monday</h2><div id="monday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div></div>
-        <div class="text-center mb-4"><h2 class="text-xl font-bold">Tuesday</h2><div id="tuesday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div></div>
-        <div class="text-center mb-4"><h2 class="text-xl font-bold">Wednesday</h2><div id="wednesday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div></div>
-        <div class="text-center mb-4"><h2 class="text-xl font-bold">Thursday</h2><div id="thursday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div></div>
-        <div class="text-center mb-4"><h2 class="text-xl font-bold">Friday</h2><div id="friday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div></div>
-        <div class="text-center mb-4"><h2 class="text-xl font-bold">Saturday</h2><div id="saturday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div></div>
-        <div class="text-center mb-4"><h2 class="text-xl font-bold">Sunday</h2><div id="sunday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div></div>
+<h1 class="text-4xl font-bold mb-4">Weekly Schedule Board</h1>
+<div class="mb-2 text-lg">Month: <span id="month" class="editable font-semibold">March</span></div>
+<div class="mb-4 text-lg">Week: <span id="week" class="editable font-semibold">1</span></div>
+<button onclick="authenticate()" class="px-4 py-2 bg-blue-500 text-white rounded mb-4 hover:bg-blue-600">Edit</button>
+<div class="flex flex-col bg-white p-6 rounded shadow-lg w-full max-w-lg">
+    <!-- Monday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Monday</h2>
+        <div id="monday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="monday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="monday-file" accept="image/*" class="hidden" multiple>
+        <button id="monday-upload" onclick="handleFileUpload('monday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
     </div>
-    <p id="lastUpdated" class="mt-4 text-sm text-gray-500"></p>
-    <button id="saveButton" onclick="saveSchedule()" class="px-4 py-2 bg-green-500 text-white rounded mt-4 hidden">Save</button>
+
+    <!-- Tuesday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Tuesday</h2>
+        <div id="tuesday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="tuesday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="tuesday-file" accept="image/*" class="hidden" multiple>
+        <button id="tuesday-upload" onclick="handleFileUpload('tuesday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+
+    <!-- Wednesday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Wednesday</h2>
+        <div id="wednesday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="wednesday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="wednesday-file" accept="image/*" class="hidden" multiple>
+        <button id="wednesday-upload" onclick="handleFileUpload('wednesday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+
+    <!-- Thursday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Thursday</h2>
+        <div id="thursday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="thursday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="thursday-file" accept="image/*" class="hidden" multiple>
+        <button id="thursday-upload" onclick="handleFileUpload('thursday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+
+    <!-- Friday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Friday</h2>
+        <div id="friday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="friday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="friday-file" accept="image/*" class="hidden" multiple>
+        <button id="friday-upload" onclick="handleFileUpload('friday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+
+    <!-- Saturday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Saturday</h2>
+        <div id="saturday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="saturday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="saturday-file" accept="image/*" class="hidden" multiple>
+        <button id="saturday-upload" onclick="handleFileUpload('saturday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+
+    <!-- Sunday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Sunday</h2>
+        <div id="sunday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="sunday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="sunday-file" accept="image/*" class="hidden" multiple>
+        <button id="sunday-upload" onclick="handleFileUpload('sunday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+</div>
+<p id="lastUpdated" class="mt-4 text-sm text-gray-500"></p>
+<button id="saveButton" onclick="saveSchedule()" class="px-4 py-2 bg-green-500 text-white rounded mt-4 hidden hover:bg-green-600">Save</button>
 </body>
 </html>
