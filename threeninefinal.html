@@ -18,7 +18,7 @@
   measurementId: "G-3CWB6TXY4G"
 };
 
-      
+
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
       console.log("Firebase initialized:", db);
@@ -48,7 +48,7 @@ document.getElementById("saveButton").classList.remove("hidden");
             const month = document.getElementById("month").innerText;
             const week = document.getElementById("week").innerText;
             const lastUpdated = new Date().toLocaleString();
-            
+
             db.ref("schedule").set({ schedule, month, week, lastUpdated }, (error) => {
                 if (error) {
                     alert("Failed to save schedule.");
