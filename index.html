@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weekly Schedule Board</title>
+    <!-- Firebase SDKs -->
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.6.1/firebase-storage-compat.js"></script>
+
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="css/styles.css">
+
+    <!-- JavaScript Files -->
+    <script src="js/firebase-config.js"></script>
+    <script src="js/date-utils.js"></script>
+    <script src="js/auth.js"></script>
+    <script src="js/image-handler.js"></script>
+    <script src="js/schedule.js"></script>
+    <script src="js/navigation.js"></script>
+    <script src="js/app.js"></script>
+</head>
+<body class="bg-gray-100 flex flex-col items-center p-6">
+<h1 class="text-4xl font-bold mb-4">Weekly Schedule Board</h1>
+
+<!-- 주간 네비게이션 및 날짜 정보 -->
+<div class="flex justify-between items-center w-full max-w-lg mb-4">
+    <button onclick="goToPreviousWeek()" class="nav-button">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+        </svg>
+        <span class="ml-1">이전 주</span>
+    </button>
+    <div class="text-center">
+        <div class="mb-2 text-lg">Month: <span id="month" class="editable font-semibold">March</span></div>
+        <div class="mb-2 text-lg">Week: <span id="week" class="editable font-semibold">1</span></div>
+        <div class="text-lg text-gray-600"><span id="date-range">3.10 ~ 3.16</span></div>
+    </div>
+    <button onclick="goToNextWeek()" class="nav-button">
+        <span class="mr-1">다음 주</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+        </svg>
+    </button>
+</div>
+
+<button onclick="authenticate()" class="px-4 py-2 bg-blue-500 text-white rounded mb-4 hover:bg-blue-600">Edit</button>
+<div class="flex flex-col bg-white p-6 rounded shadow-lg w-full max-w-lg">
+    <!-- Monday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Monday</h2>
+        <div id="monday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="monday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="monday-file" accept="image/*" class="hidden" multiple>
+        <button id="monday-upload" onclick="handleFileUpload('monday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+
+    <!-- Tuesday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Tuesday</h2>
+        <div id="tuesday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="tuesday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="tuesday-file" accept="image/*" class="hidden" multiple>
+        <button id="tuesday-upload" onclick="handleFileUpload('tuesday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+
+    <!-- Wednesday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Wednesday</h2>
+        <div id="wednesday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="wednesday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="wednesday-file" accept="image/*" class="hidden" multiple>
+        <button id="wednesday-upload" onclick="handleFileUpload('wednesday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+
+    <!-- Thursday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Thursday</h2>
+        <div id="thursday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="thursday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="thursday-file" accept="image/*" class="hidden" multiple>
+        <button id="thursday-upload" onclick="handleFileUpload('thursday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+
+    <!-- Friday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Friday</h2>
+        <div id="friday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="friday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="friday-file" accept="image/*" class="hidden" multiple>
+        <button id="friday-upload" onclick="handleFileUpload('friday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+
+    <!-- Saturday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Saturday</h2>
+        <div id="saturday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="saturday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="saturday-file" accept="image/*" class="hidden" multiple>
+        <button id="saturday-upload" onclick="handleFileUpload('saturday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+
+    <!-- Sunday -->
+    <div class="text-center mb-6">
+        <h2 class="text-xl font-bold">Sunday</h2>
+        <div id="sunday" class="day-box editable text-lg p-4 border rounded min-h-[100px] bg-gray-50"></div>
+        <div id="sunday-images" class="mt-2 text-left hidden"></div>
+        <input type="file" id="sunday-file" accept="image/*" class="hidden" multiple>
+        <button id="sunday-upload" onclick="handleFileUpload('sunday')" class="mt-2 px-3 py-1 bg-gray-200 text-gray-700 rounded text-sm hidden hover:bg-gray-300">Add Images</button>
+    </div>
+</div>
+<p id="lastUpdated" class="mt-4 text-sm text-gray-500"></p>
+<button id="saveButton" onclick="saveSchedule()" class="px-4 py-2 bg-green-500 text-white rounded mt-4 hidden hover:bg-green-600">Save</button>
+</body>
+</html>
