@@ -253,11 +253,17 @@ function displayScheduleData(data, loadMetadataOnly = false) {
         }
     }
 
-    // 이미지 데이터 불러오기
+    // Always clear and hide all image containers first
+    days.forEach(day => {
+        const imageContainer = document.getElementById(`${day}-images`);
+        imageContainer.innerHTML = '';
+        imageContainer.classList.add('hidden');
+    });
+
+    // 이미지 데이터 불러오기 (only if there's image data)
     if (data.images) {
         days.forEach(day => {
             const imageContainer = document.getElementById(`${day}-images`);
-            imageContainer.innerHTML = '';
 
             if (data.images[day] && data.images[day].length > 0) {
                 imageContainer.classList.remove('hidden');
@@ -287,8 +293,6 @@ function displayScheduleData(data, loadMetadataOnly = false) {
 
                     imageContainer.appendChild(imageItem);
                 });
-            } else {
-                imageContainer.classList.add('hidden');
             }
         });
     }
