@@ -199,6 +199,9 @@ function loadWeekData() {
             }
 
             displayScheduleData(weekData, true);
+
+            // 각 요일별 날짜 표시 업데이트
+            updateDayDates(currentStartDate);
             return;
         }
 
@@ -209,6 +212,8 @@ function loadWeekData() {
             // 기본 데이터도 없으면 초기화
             if (!defaultData) {
                 clearScheduleData();
+                // 각 요일별 날짜 표시 업데이트
+                updateDayDates(currentStartDate);
                 return;
             }
 
@@ -228,6 +233,9 @@ function loadWeekData() {
                 // 일치하지 않으면 데이터 초기화
                 clearScheduleData();
             }
+
+            // 각 요일별 날짜 표시 업데이트
+            updateDayDates(currentStartDate);
         });
     });
 }

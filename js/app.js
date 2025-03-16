@@ -71,10 +71,16 @@ window.onload = function() {
 
             // 일정 데이터 표시
             displayScheduleData(data);
+
+            // 각 요일별 날짜 표시 업데이트 (시작일 기준)
+            updateDayDates(currentStartDate);
         } else {
             console.log("저장된 데이터 없음, 현재 날짜 기준으로 초기화");
             // 데이터가 없는 경우 현재 날짜 기준으로 초기화
             initializeCurrentDate();
+
+            // 각 요일별 날짜 표시 업데이트 (시작일 기준)
+            updateDayDates(currentStartDate);
         }
 
         // 최종 UI 상태 확인

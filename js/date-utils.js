@@ -130,6 +130,27 @@ function updateDateRange() {
 
     // 화면에 표시
     document.getElementById("date-range").innerText = dateRangeStr;
+
+    // 각 요일별 날짜 표시 업데이트
+    updateDayDates(startDate);
+}
+
+// 각 요일별 날짜 표시
+function updateDayDates(startDate) {
+    // 월요일부터 시작하여 각 요일의 날짜 계산 및 표시
+    days.forEach((day, index) => {
+        const date = new Date(startDate);
+        date.setDate(startDate.getDate() + index);
+
+        // 날짜 포맷팅 (예: (3.10))
+        const dateStr = `(${date.getMonth() + 1}.${date.getDate()})`;
+
+        // 화면에 표시
+        const dateElement = document.getElementById(`${day}-date`);
+        if (dateElement) {
+            dateElement.innerText = dateStr;
+        }
+    });
 }
 
 // Initialize current date values
