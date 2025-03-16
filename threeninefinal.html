@@ -13,22 +13,28 @@
             authDomain: "weekly-schedule-board.firebaseapp.com",
             databaseURL: "https://weekly-schedule-board-default-rtdb.firebaseio.com",
             projectId: "weekly-schedule-board",
-            storageBucket: "weekly-schedule-board.appspot.com",  // ✅ Corrected
+            storageBucket: "weekly-schedule-board.appspot.com",
             messagingSenderId: "518722521976",
             appId: "1:518722521976:web:0cc9e0ea5d346bc014568d",
             measurementId: "G-3CWB6TXY4G"
         };
 
-
         firebase.initializeApp(firebaseConfig);
         const db = firebase.database();
         const storage = firebase.storage();
         console.log("Firebase initialized:", db);
-
     </script>
     <script>
         let isEditor = false;
         const days = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday'];
+        // 현재 날짜 관련 변수 추가
+        let currentYear;
+        let currentMonth;
+        let currentWeek;
+        let currentStartDate;
+
+        // 임시 저장 변수
+        let tempScheduleData = null;
 
         function authenticate() {
             const password = prompt("Enter the password to edit:");
@@ -136,18 +142,40 @@
 
             const month = document.getElementById("month").innerText;
             const week = document.getElementById("week").innerText;
+            const dateRange = document.getElementById("date-range").innerText;
             const lastUpdated = new Date().toLocaleString();
 
-            db.ref("schedule").set({
+            // 현재 연도, 월, 주차를 기준으로 데이터 키 생성
+            const dataKey = `${currentYear}-${currentMonth+1}-${currentWeek}`;
+
+            // 주차별 데이터 저장
+            db.ref(`weeks/${dataKey}`).set({
                 schedule,
                 images,
                 month,
                 week,
+                dateRange,
+                year: currentYear,
                 lastUpdated
             }, (error) => {
                 if (error) {
                     alert("Failed to save schedule.");
                 } else {
+                    // 현재 상태를 "last" 데이터로도 복사 (항상 최신 상태를 쉽게 불러올 수 있도록)
+                    db.ref("schedule").set({
+                        schedule,
+                        images,
+                        month,
+                        week,
+                        dateRange,
+                        year: currentYear,
+                        lastUpdated
+                    }, (error) => {
+                        if (error) {
+                            console.error("Failed to update last schedule:", error);
+                        }
+                    });
+
                     document.getElementById("lastUpdated").innerText = `Last Updated: ${lastUpdated}`;
                     alert("Schedule saved successfully.");
 
@@ -157,48 +185,178 @@
             });
         }
 
+        // 새로 추가된 함수: 현재 일정 데이터 임시 저장
+        function saveTempScheduleData() {
+            if (!isEditor) return;
+
+            tempScheduleData = {
+                schedule: {},
+                images: {}
+            };
+
+            // 텍스트 콘텐츠 저장
+            document.querySelectorAll(".day-box").forEach(box => {
+                tempScheduleData.schedule[box.id] = box.innerHTML;
+            });
+
+            // 이미지 저장
+            days.forEach(day => {
+                const dayImages = [];
+                const imageContainer = document.getElementById(`${day}-images`);
+
+                imageContainer.querySelectorAll('.image-item').forEach(item => {
+                    const fileName = item.querySelector('.image-filename').textContent;
+                    const imageData = item.querySelector('.image-data').value;
+
+                    dayImages.push({
+                        fileName: fileName,
+                        data: imageData
+                    });
+                });
+
+                tempScheduleData.images[day] = dayImages;
+            });
+        }
+
         function loadSchedule() {
-            db.ref("schedule").on("value", snapshot => {
+            db.ref("schedule").once("value", snapshot => {
                 const data = snapshot.val();
                 if (data) {
-                    // Load text content
-                    for (const [key, value] of Object.entries(data.schedule)) {
-                        document.getElementById(key).innerHTML = value;
-                    }
+                    // 저장된 연도값이 있으면 불러오기, 없으면 현재 연도 사용
+                    currentYear = data.year || new Date().getFullYear();
 
-                    // Load images
-                    if (data.images) {
-                        days.forEach(day => {
-                            const imageContainer = document.getElementById(`${day}-images`);
-                            imageContainer.innerHTML = '';
-
-                            if (data.images[day] && data.images[day].length > 0) {
-                                imageContainer.classList.remove('hidden');
-
-                                data.images[day].forEach(img => {
-                                    const imageItem = document.createElement('div');
-                                    imageItem.className = 'image-item mb-2';
-
-                                    // In view mode, show clickable filenames (no delete button)
-                                    imageItem.innerHTML = `
-                                        <span class="image-filename cursor-pointer text-blue-500 underline"
-                                              onclick="showImagePopup('${img.fileName}', '${img.data}')">${img.fileName}</span>
-                                        <input type="hidden" class="image-data" value="${img.data}">
-                                    `;
-
-                                    imageContainer.appendChild(imageItem);
-                                });
-                            } else {
-                                imageContainer.classList.add('hidden');
-                            }
-                        });
-                    }
-
+                    // 월과 주차 정보 설정
                     document.getElementById("month").innerText = data.month;
                     document.getElementById("week").innerText = data.week;
+
+                    // 월과 주차 정보를 숫자로 변환
+                    currentMonth = getMonthNumber(data.month);
+                    currentWeek = parseInt(data.week);
+
+                    // 현재 시작일 계산 (해당 주의 월요일)
+                    recalculateStartDate();
+
+                    // 날짜 범위가 저장되어 있으면 사용, 없으면 새로 계산
+                    if (data.dateRange) {
+                        document.getElementById("date-range").innerText = data.dateRange;
+                    } else {
+                        updateDateRange();
+                    }
+
                     document.getElementById("lastUpdated").innerText = `Last Updated: ${data.lastUpdated}`;
+
+                    // 일정 데이터 표시
+                    displayScheduleData(data);
+                } else {
+                    // 데이터가 없는 경우 현재 날짜 기준으로 초기화
+                    initializeCurrentDate();
                 }
             });
+        }
+
+        function loadWeekData() {
+            // 현재 연도, 월, 주차를 기준으로 데이터 키 생성
+            const dataKey = `${currentYear}-${currentMonth+1}-${currentWeek}`;
+
+            // Firebase에서 해당 주차에 해당하는 데이터 불러오기
+            db.ref(`weeks/${dataKey}`).once("value", snapshot => {
+                const weekData = snapshot.val();
+
+                // 해당 주차의 데이터가 있으면 사용
+                if (weekData) {
+                    displayScheduleData(weekData);
+                    return;
+                }
+
+                // 주차별 데이터가 없으면 기본 schedule 데이터 확인
+                db.ref("schedule").once("value", snapshot => {
+                    const defaultData = snapshot.val();
+
+                    // 기본 데이터도 없으면 초기화
+                    if (!defaultData) {
+                        clearScheduleData();
+                        return;
+                    }
+
+                    // 기본 데이터의 연도, 월, 주차가 현재와 일치하는지 확인
+                    const savedYear = defaultData.year || currentYear;
+                    const savedMonth = getMonthNumber(defaultData.month);
+                    const savedWeek = parseInt(defaultData.week);
+
+                    if (savedYear === currentYear && savedMonth === currentMonth && savedWeek === currentWeek) {
+                        displayScheduleData(defaultData);
+                    } else {
+                        // 일치하지 않으면 데이터 초기화
+                        clearScheduleData();
+                    }
+                });
+            });
+        }
+
+        // 새로 추가된 함수: 일정 데이터 표시
+        function displayScheduleData(data) {
+            // 일정 데이터 불러오기
+            if (data.schedule) {
+                for (const [key, value] of Object.entries(data.schedule)) {
+                    document.getElementById(key).innerHTML = value;
+                }
+            }
+
+            // 이미지 데이터 불러오기
+            if (data.images) {
+                days.forEach(day => {
+                    const imageContainer = document.getElementById(`${day}-images`);
+                    imageContainer.innerHTML = '';
+
+                    if (data.images[day] && data.images[day].length > 0) {
+                        imageContainer.classList.remove('hidden');
+
+                        data.images[day].forEach(img => {
+                            const imageItem = document.createElement('div');
+                            imageItem.className = 'image-item mb-2';
+
+                            // In view mode, show clickable filenames (no delete button)
+                            imageItem.innerHTML = `
+                                <span class="image-filename cursor-pointer text-blue-500 underline"
+                                      onclick="showImagePopup('${img.fileName}', '${img.data}')">${img.fileName}</span>
+                                <input type="hidden" class="image-data" value="${img.data}">
+                            `;
+
+                            imageContainer.appendChild(imageItem);
+                        });
+                    } else {
+                        imageContainer.classList.add('hidden');
+                    }
+                });
+            }
+
+            // 마지막 업데이트 정보
+            if (data.lastUpdated) {
+                document.getElementById("lastUpdated").innerText = `Last Updated: ${data.lastUpdated}`;
+            }
+
+            // 에디터 모드일 경우 이미지 삭제 버튼 추가
+            if (isEditor) {
+                days.forEach(day => {
+                    const imageContainer = document.getElementById(`${day}-images`);
+                    const imageItems = imageContainer.querySelectorAll('.image-item');
+
+                    imageItems.forEach(item => {
+                        // 삭제 버튼이 없으면 추가
+                        if (!item.querySelector('.delete-image-btn')) {
+                            const deleteBtn = document.createElement('button');
+                            deleteBtn.className = 'delete-image-btn ml-2 text-red-500 hover:text-red-700';
+                            deleteBtn.innerHTML = `
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            `;
+                            deleteBtn.onclick = function(e) { deleteImage(e, this); };
+                            item.appendChild(deleteBtn);
+                        }
+                    });
+                });
+            }
         }
 
         function showImagePopup(fileName, imageData) {
@@ -242,8 +400,245 @@
             }
         }
 
+        // 새로 추가된 함수: 현재 날짜 기준으로 값 초기화
+        function initializeCurrentDate() {
+            const now = new Date();
+            currentYear = now.getFullYear();
+            currentMonth = now.getMonth(); // 0-11
+
+            // 현재 주의 시작일 계산 (월요일)
+            currentStartDate = new Date(now);
+            const dayOfWeek = now.getDay(); // 0은 일요일, 1은 월요일...
+            const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // 주의 시작일(월요일)까지의 차이
+            currentStartDate.setDate(now.getDate() + diff);
+
+            // 주차 계산
+            calculateWeekNumber();
+
+            // UI 업데이트
+            updateUI();
+        }
+
+        // 새로 추가된 함수: 자연스러운 주차 계산 (Working Day 기준)
+        function calculateWeekNumber() {
+            // 현재 시작일(월요일)과 종료일(일요일)
+            const weekStart = new Date(currentStartDate);
+            const weekEnd = new Date(weekStart);
+            weekEnd.setDate(weekStart.getDate() + 6);
+
+            // Working Day(월~금) 검사
+            const workingDays = [];
+            for (let i = 0; i < 5; i++) {
+                const day = new Date(weekStart);
+                day.setDate(weekStart.getDate() + i);
+                workingDays.push(day);
+            }
+
+            // Working Day 중에 1일이 있는지 확인 (새로운 달의 시작)
+            let newMonthStart = false;
+            for (const day of workingDays) {
+                if (day.getDate() === 1) {
+                    currentMonth = day.getMonth();
+                    currentYear = day.getFullYear();
+                    currentWeek = 1;
+                    newMonthStart = true;
+                    break;
+                }
+            }
+
+            // 새로운 달이 시작되지 않는 경우 - 기본 달 및 주차 계산
+            if (!newMonthStart) {
+                // 주의 중간 지점(수요일)을 기준으로 월 결정
+                const midWeek = new Date(weekStart);
+                midWeek.setDate(weekStart.getDate() + 2); // 월요일 + 2 = 수요일
+
+                currentMonth = midWeek.getMonth();
+                currentYear = midWeek.getFullYear();
+
+                // 해당 월의 첫째 날
+                const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
+
+                // 월의 첫째 날이 속한 주의 월요일 찾기
+                const firstMondayOfMonth = new Date(firstDayOfMonth);
+                const dayOfWeek = firstDayOfMonth.getDay(); // 0=일, 1=월, ..., 6=토
+                const daysToSubtract = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+                firstMondayOfMonth.setDate(firstDayOfMonth.getDate() - daysToSubtract);
+
+                // 첫째 날이 월~금 사이에 있는지 확인
+                let firstWeekBelongsToMonth = false;
+                if (firstMondayOfMonth.getMonth() !== currentMonth) {
+                    // 첫 주의 Working Day가 현재 달에 속하는지 확인
+                    for (let i = 0; i < 5; i++) {
+                        const day = new Date(firstMondayOfMonth);
+                        day.setDate(firstMondayOfMonth.getDate() + i);
+                        if (day.getMonth() === currentMonth && day.getFullYear() === currentYear) {
+                            firstWeekBelongsToMonth = true;
+                            break;
+                        }
+                    }
+                } else {
+                    firstWeekBelongsToMonth = true;
+                }
+
+                // 주차 계산
+                let weeksFromStart;
+                if (firstWeekBelongsToMonth) {
+                    // 첫 주가 이번 달에 속하면, 그 주부터 주차 계산
+                    weeksFromStart = Math.floor((weekStart - firstMondayOfMonth) / (7 * 24 * 60 * 60 * 1000));
+                    currentWeek = weeksFromStart + 1;
+                } else {
+                    // 첫 주가 이전 달에 속하면, 다음 주부터 1주차로 계산
+                    const secondMondayOfMonth = new Date(firstMondayOfMonth);
+                    secondMondayOfMonth.setDate(firstMondayOfMonth.getDate() + 7);
+                    weeksFromStart = Math.floor((weekStart - secondMondayOfMonth) / (7 * 24 * 60 * 60 * 1000));
+                    currentWeek = weeksFromStart + 1;
+                }
+
+                // 주차가 0이나 음수로 계산되는 경우 방지
+                if (currentWeek < 1) {
+                    currentWeek = 1;
+                }
+            }
+        }
+
+        // 새로 추가된 함수: 월과 주차 업데이트
+        function updateMonthAndWeek() {
+            // 자연스러운 주차 계산 함수 호출
+            calculateWeekNumber();
+        }
+
+        // 새로 추가된 함수: 현재 월과 주차 기준으로 시작일(월요일) 다시 계산
+        function recalculateStartDate() {
+            // 해당 월의 첫 번째 날
+            const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
+
+            // 월의 첫째 날이 속한 주의 월요일 찾기
+            const firstDayDayOfWeek = firstDayOfMonth.getDay();
+            const diff = firstDayDayOfWeek === 0 ? -6 : 1 - firstDayDayOfWeek; // 월요일까지의 차이
+
+            // 첫 주의 월요일 계산
+            const firstMondayOfMonth = new Date(firstDayOfMonth);
+            firstMondayOfMonth.setDate(firstDayOfMonth.getDate() + diff);
+
+            // 현재 주차에 해당하는 월요일 계산
+            currentStartDate = new Date(firstMondayOfMonth);
+            currentStartDate.setDate(firstMondayOfMonth.getDate() + (currentWeek - 1) * 7);
+        }
+
+        // 새로 추가된 함수: 이전 주로 이동
+        function goToPreviousWeek() {
+            if (isEditor) {
+                // 편집 모드에서는 변경 사항 확인
+                if (confirm("변경 사항이 저장되지 않을 수 있습니다. 계속하시겠습니까?")) {
+                    saveTempScheduleData(); // 임시 저장
+                } else {
+                    return;
+                }
+            }
+
+            // 현재 시작일에서 7일 빼기
+            currentStartDate.setDate(currentStartDate.getDate() - 7);
+
+            // 월과 주차 업데이트
+            updateMonthAndWeek();
+
+            // UI 업데이트
+            updateUI();
+
+            // 해당 주차의 데이터 불러오기
+            loadWeekData();
+        }
+
+        // 새로 추가된 함수: 다음 주로 이동
+        function goToNextWeek() {
+            if (isEditor) {
+                // 편집 모드에서는 변경 사항 확인
+                if (confirm("변경 사항이 저장되지 않을 수 있습니다. 계속하시겠습니까?")) {
+                    saveTempScheduleData(); // 임시 저장
+                } else {
+                    return;
+                }
+            }
+
+            // 현재 시작일에서 7일 더하기
+            currentStartDate.setDate(currentStartDate.getDate() + 7);
+
+            // 월과 주차 업데이트
+            updateMonthAndWeek();
+
+            // UI 업데이트
+            updateUI();
+
+            // 해당 주차의 데이터 불러오기
+            loadWeekData();
+        }
+
+        // 현재 시작일 기준으로 날짜 범위 업데이트
+        function updateDateRange() {
+            // 주의 시작일(월요일)
+            const startDate = new Date(currentStartDate);
+
+            // 주의 종료일(일요일) = 시작일 + 6일
+            const endDate = new Date(startDate);
+            endDate.setDate(startDate.getDate() + 6);
+
+            // 날짜 포맷팅 (예: 3.10 ~ 3.16)
+            const startStr = `${startDate.getMonth() + 1}.${startDate.getDate()}`;
+            const endStr = `${endDate.getMonth() + 1}.${endDate.getDate()}`;
+            const dateRangeStr = `${startStr} ~ ${endStr}`;
+
+            // 화면에 표시
+            document.getElementById("date-range").innerText = dateRangeStr;
+        }
+
+        // 새로 추가된 함수: UI 업데이트
+        function updateUI() {
+            // 월 이름 업데이트
+            document.getElementById("month").innerText = getMonthName(currentMonth);
+
+            // 주차 업데이트
+            document.getElementById("week").innerText = currentWeek;
+
+            // 날짜 범위 업데이트
+            updateDateRange();
+        }
+
+        // 새로 추가된 함수: 일정 데이터 초기화
+        function clearScheduleData() {
+            // 모든 날짜 박스 비우기
+            days.forEach(day => {
+                document.getElementById(day).innerHTML = "";
+
+                // 이미지 컨테이너 비우고 숨기기
+                const imageContainer = document.getElementById(`${day}-images`);
+                imageContainer.innerHTML = '';
+                imageContainer.classList.add('hidden');
+            });
+        }
+
+        // 새로 추가된 함수: 월 번호를 이름으로 변환
+        function getMonthName(monthNumber) {
+            const months = [
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+            ];
+            return months[monthNumber];
+        }
+
+        // 새로 추가된 함수: 월 이름을 번호로 변환
+        function getMonthNumber(monthName) {
+            const months = [
+                "January", "February", "March", "April", "May", "June",
+                "July", "August", "September", "October", "November", "December"
+            ];
+            return months.indexOf(monthName);
+        }
+
         // Initialize everything when the page loads
         window.onload = function() {
+            // 현재 날짜 초기화
+            initializeCurrentDate();
+
             loadSchedule();
 
             // Set up file input listeners
@@ -264,12 +659,46 @@
             display: inline-block;
             margin-right: 8px;
         }
+        .nav-button {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 0.5rem;
+            background-color: #e5e7eb;
+            border-radius: 0.375rem;
+            color: #4b5563;
+            transition: all 0.2s;
+        }
+        .nav-button:hover {
+            background-color: #d1d5db;
+            color: #1f2937;
+        }
     </style>
 </head>
 <body class="bg-gray-100 flex flex-col items-center p-6">
 <h1 class="text-4xl font-bold mb-4">Weekly Schedule Board</h1>
-<div class="mb-2 text-lg">Month: <span id="month" class="editable font-semibold">March</span></div>
-<div class="mb-4 text-lg">Week: <span id="week" class="editable font-semibold">1</span></div>
+
+<!-- 주간 네비게이션 및 날짜 정보 -->
+<div class="flex justify-between items-center w-full max-w-lg mb-4">
+    <button onclick="goToPreviousWeek()" class="nav-button">
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M12.707 5.293a1 1 0 010 1.414L9.414 10l3.293 3.293a1 1 0 01-1.414 1.414l-4-4a1 1 0 010-1.414l4-4a1 1 0 011.414 0z" clip-rule="evenodd" />
+        </svg>
+        <span class="ml-1">이전 주</span>
+    </button>
+    <div class="text-center">
+        <div class="mb-2 text-lg">Month: <span id="month" class="editable font-semibold">March</span></div>
+        <div class="mb-2 text-lg">Week: <span id="week" class="editable font-semibold">1</span></div>
+        <div class="text-lg text-gray-600"><span id="date-range">3.10 ~ 3.16</span></div>
+    </div>
+    <button onclick="goToNextWeek()" class="nav-button">
+        <span class="mr-1">다음 주</span>
+        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" />
+        </svg>
+    </button>
+</div>
+
 <button onclick="authenticate()" class="px-4 py-2 bg-blue-500 text-white rounded mb-4 hover:bg-blue-600">Edit</button>
 <div class="flex flex-col bg-white p-6 rounded shadow-lg w-full max-w-lg">
     <!-- Monday -->
