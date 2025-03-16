@@ -2,6 +2,9 @@
  * Image handling functionality for upload, display, and deletion
  */
 
+// 이미지 로딩 상태 표시를 위한 변수
+let loadingPopup = null;
+
 /**
  * Trigger file upload for a specific day
  * @param {string} day - Day of the week
@@ -71,6 +74,116 @@ function deleteImage(event, button) {
             imageContainer.classList.add('hidden');
         }
     }
+}
+
+/**
+ * 로딩 인디케이터 표시
+ * @param {string} message - 표시할 메시지
+ */
+function showLoadingIndicator(message = "이미지 로딩 중...") {
+    // 이미 로딩 팝업이 있으면 제거
+    if (loadingPopup) {
+        closeLoadingIndicator();
+    }
+
+    loadingPopup = document.createElement('div');
+    loadingPopup.className = 'fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50';
+    loadingPopup.id = 'loading-popup';
+
+    loadingPopup.innerHTML = `
+        <div class="bg-white p-6 rounded-lg flex flex-col items-center">
+            <div class="loading-spinner mb-3"></div>
+            <p class="text-lg">${message}</p>
+        </div>
+    `;
+
+    document.body.appendChild(loadingPopup);
+}
+
+/**
+ * 로딩 인디케이터 닫기
+ */
+function closeLoadingIndicator() {
+    if (loadingPopup) {
+        document.body.removeChild(loadingPopup);
+        loadingPopup = null;
+    }
+}
+
+/**
+ * 지연 로딩: 이미지 ID로 실제 이미지 데이터를 불러와 팝업으로 표시
+ * @param {string} day - 요일
+ * @param {number} index - 이미지 인덱스
+ * @param {string} fileName - 파일 이름
+ */
+function loadAndShowImage(day, index, fileName) {
+    // 로딩 표시
+    showLoadingIndicator(`"${fileName}" 로딩 중...`);
+
+    // 캐시된 이미지 데이터 확인
+    if (currentWeekImages && currentWeekImages[day] && currentWeekImages[day][index]) {
+        const imgData = currentWeekImages[day][index].data;
+
+        if (imgData) {
+            // 로딩 인디케이터 닫기
+            closeLoadingIndicator();
+
+            // 이미지 팝업 표시
+            showImagePopup(fileName, imgData);
+            return;
+        }
+    }
+
+    // 현재 연도, 월, 주차를 기준으로 데이터 키 생성
+    const dataKey = `${currentYear}-${currentMonth+1}-${currentWeek}`;
+
+    // Firebase에서 해당 이미지 데이터만 불러오기
+    db.ref(`weeks/${dataKey}/images/${day}/${index}`).once("value", snapshot => {
+        const imageData = snapshot.val();
+
+        // 로딩 인디케이터 닫기
+        closeLoadingIndicator();
+
+        if (imageData && imageData.data) {
+            // 이미지 데이터를 캐시에 저장
+            if (!currentWeekImages[day]) {
+                currentWeekImages[day] = [];
+            }
+
+            if (!currentWeekImages[day][index]) {
+                currentWeekImages[day][index] = {};
+            }
+
+            currentWeekImages[day][index].data = imageData.data;
+
+            // 이미지 팝업 표시
+            showImagePopup(fileName, imageData.data);
+        } else {
+            // 해당 주차에서 데이터를 찾지 못한 경우 기본 스케줄에서 시도
+            db.ref(`schedule/images/${day}/${index}`).once("value", snapshot => {
+                const defaultImageData = snapshot.val();
+
+                if (defaultImageData && defaultImageData.data) {
+                    // 캐시에 저장
+                    if (!currentWeekImages[day]) {
+                        currentWeekImages[day] = [];
+                    }
+
+                    if (!currentWeekImages[day][index]) {
+                        currentWeekImages[day][index] = {};
+                    }
+
+                    currentWeekImages[day][index].data = defaultImageData.data;
+
+                    // 이미지 팝업 표시
+                    showImagePopup(fileName, defaultImageData.data);
+                } else {
+                    // 이미지를 찾지 못한 경우
+                    alert(`이미지 데이터를 불러올 수 없습니다: ${fileName}`);
+                }
+            });
+        }
+    });
 }
 
 /**

@@ -4,6 +4,7 @@
 
 // Temporary storage for schedule data
 let tempScheduleData = null;
+let currentWeekImages = {}; // 현재 주차의 이미지 메타데이터 캐시
 
 /**
  * Save the current schedule to Firebase
@@ -167,8 +168,8 @@ function loadSchedule() {
 
             document.getElementById("lastUpdated").innerText = `Last Updated: ${data.lastUpdated}`;
 
-            // 일정 데이터 표시
-            displayScheduleData(data);
+            // 일정 데이터 표시 (이미지 메타데이터만 포함)
+            displayScheduleData(data, true);
         } else {
             // 데이터가 없는 경우 현재 날짜 기준으로 초기화
             initializeCurrentDate();
@@ -180,6 +181,9 @@ function loadSchedule() {
  * Load data for the current week
  */
 function loadWeekData() {
+    // 이미지 메타데이터 캐시 초기화
+    currentWeekImages = {};
+
     // 현재 연도, 월, 주차를 기준으로 데이터 키 생성
     const dataKey = `${currentYear}-${currentMonth+1}-${currentWeek}`;
 
@@ -189,7 +193,12 @@ function loadWeekData() {
 
         // 해당 주차의 데이터가 있으면 사용
         if (weekData) {
-            displayScheduleData(weekData);
+            // 이미지 메타데이터 캐시 설정
+            if (weekData.images) {
+                currentWeekImages = weekData.images;
+            }
+
+            displayScheduleData(weekData, true);
             return;
         }
 
@@ -209,7 +218,12 @@ function loadWeekData() {
             const savedWeek = parseInt(defaultData.week);
 
             if (savedYear === currentYear && savedMonth === currentMonth && savedWeek === currentWeek) {
-                displayScheduleData(defaultData);
+                // 이미지 메타데이터 캐시 설정
+                if (defaultData.images) {
+                    currentWeekImages = defaultData.images;
+                }
+
+                displayScheduleData(defaultData, true);
             } else {
                 // 일치하지 않으면 데이터 초기화
                 clearScheduleData();
@@ -221,8 +235,9 @@ function loadWeekData() {
 /**
  * Display schedule data in the UI
  * @param {Object} data - The schedule data to display
+ * @param {boolean} loadMetadataOnly - Whether to load only image metadata (default: false)
  */
-function displayScheduleData(data) {
+function displayScheduleData(data, loadMetadataOnly = false) {
     // 일정 데이터 불러오기
     if (data.schedule) {
         for (const [key, value] of Object.entries(data.schedule)) {
@@ -239,16 +254,28 @@ function displayScheduleData(data) {
             if (data.images[day] && data.images[day].length > 0) {
                 imageContainer.classList.remove('hidden');
 
-                data.images[day].forEach(img => {
+                data.images[day].forEach((img, index) => {
                     const imageItem = document.createElement('div');
                     imageItem.className = 'image-item mb-2';
 
-                    // In view mode, show clickable filenames (no delete button)
-                    imageItem.innerHTML = `
-                        <span class="image-filename cursor-pointer text-blue-500 underline"
-                              onclick="showImagePopup('${img.fileName}', '${img.data}')">${img.fileName}</span>
-                        <input type="hidden" class="image-data" value="${img.data}">
-                    `;
+                    // 성능 개선: 이미지 메타데이터만 표시하고, 클릭 시 실제 데이터 로드
+                    if (loadMetadataOnly) {
+                        // 이미지 ID 생성 (고유 식별자)
+                        const imageId = `${day}-img-${index}`;
+
+                        // In view mode, show clickable filenames for lazy loading
+                        imageItem.innerHTML = `
+                            <span class="image-filename cursor-pointer text-blue-500 underline"
+                                  onclick="loadAndShowImage('${day}', ${index}, '${img.fileName}')">${img.fileName}</span>
+                        `;
+                    } else {
+                        // 편집 모드 등에서는 이전 방식 유지 (이미지 데이터 포함)
+                        imageItem.innerHTML = `
+                            <span class="image-filename cursor-pointer text-blue-500 underline"
+                                  onclick="showImagePopup('${img.fileName}', '${img.data}')">${img.fileName}</span>
+                            <input type="hidden" class="image-data" value="${img.data}">
+                        `;
+                    }
 
                     imageContainer.appendChild(imageItem);
                 });
