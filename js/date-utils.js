@@ -157,18 +157,30 @@ function updateDayDates(startDate) {
 function initializeCurrentDate() {
     console.log("현재 날짜 기준으로 초기화 시작");
     const now = new Date();
-    currentYear = now.getFullYear();
-    currentMonth = now.getMonth(); // 0-11
 
-    // 현재 주의 시작일 계산 (월요일)
-    currentStartDate = new Date(now);
-    const dayOfWeek = now.getDay(); // 0은 일요일, 1은 월요일...
-    const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // 주의 시작일(월요일)까지의 차이
-    currentStartDate.setDate(now.getDate() + diff);
+    // calculateCurrentWeekInfo 함수 사용
+    if (typeof calculateCurrentWeekInfo === 'function') {
+        const currentDateInfo = calculateCurrentWeekInfo(now);
+        currentYear = currentDateInfo.year;
+        currentMonth = currentDateInfo.month;
+        currentWeek = currentDateInfo.week;
+        currentStartDate = currentDateInfo.startDate;
+    } else {
+        // 기존 방식으로 초기화 (calculateCurrentWeekInfo 함수가 없는 경우)
+        currentYear = now.getFullYear();
+        currentMonth = now.getMonth(); // 0-11
+
+        // 현재 주의 시작일 계산 (월요일)
+        currentStartDate = new Date(now);
+        const dayOfWeek = now.getDay(); // 0은 일요일, 1은 월요일...
+        const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // 주의 시작일(월요일)까지의 차이
+        currentStartDate.setDate(now.getDate() + diff);
+
+        // 주차 계산
+        calculateWeekNumber();
+    }
+
     console.log(`2. 현재 시작일 계산: ${currentStartDate.toLocaleDateString()}`);
-
-    // 주차 계산
-    calculateWeekNumber();
     console.log(`3. 주차 계산 완료: ${getMonthName(currentMonth)} ${currentWeek}주차`);
 
     // 날짜 범위 계산
