@@ -233,13 +233,34 @@
                     currentMonth = getMonthNumber(data.month);
                     currentWeek = parseInt(data.week);
 
-                    // 현재 시작일 계산 (해당 주의 월요일)
-                    recalculateStartDate();
-
-                    // 날짜 범위가 저장되어 있으면 사용, 없으면 새로 계산
+                    // 날짜 범위가 저장되어 있으면 파싱하여 사용
                     if (data.dateRange) {
-                        document.getElementById("date-range").innerText = data.dateRange;
+                        // 날짜 범위 파싱하여 시작일 계산
+                        const dateRangeParts = data.dateRange.split(' ~ ');
+                        if (dateRangeParts.length === 2) {
+                            const startDateParts = dateRangeParts[0].split('.');
+                            if (startDateParts.length === 2) {
+                                const month = parseInt(startDateParts[0]) - 1; // 0-based month
+                                const day = parseInt(startDateParts[1]);
+
+                                // 시작일 설정
+                                currentStartDate = new Date(currentYear, month, day);
+
+                                // 날짜 범위 표시
+                                document.getElementById("date-range").innerText = data.dateRange;
+                            } else {
+                                // 파싱 실패 시 계산
+                                recalculateStartDate();
+                                updateDateRange();
+                            }
+                        } else {
+                            // 파싱 실패 시 계산
+                            recalculateStartDate();
+                            updateDateRange();
+                        }
                     } else {
+                        // 날짜 범위가 없으면 계산
+                        recalculateStartDate();
                         updateDateRange();
                     }
 
@@ -402,6 +423,7 @@
 
         // 새로 추가된 함수: 현재 날짜 기준으로 값 초기화
         function initializeCurrentDate() {
+            console.log("현재 날짜 기준으로 초기화 시작");
             const now = new Date();
             currentYear = now.getFullYear();
             currentMonth = now.getMonth(); // 0-11
@@ -411,20 +433,29 @@
             const dayOfWeek = now.getDay(); // 0은 일요일, 1은 월요일...
             const diff = dayOfWeek === 0 ? -6 : 1 - dayOfWeek; // 주의 시작일(월요일)까지의 차이
             currentStartDate.setDate(now.getDate() + diff);
+            console.log(`2. 현재 시작일 계산: ${currentStartDate.toLocaleDateString()}`);
 
             // 주차 계산
             calculateWeekNumber();
+            console.log(`3. 주차 계산 완료: ${getMonthName(currentMonth)} ${currentWeek}주차`);
+
+            // 날짜 범위 계산
+            updateDateRange();
+            console.log(`4. 날짜 범위 계산: ${document.getElementById("date-range").innerText}`);
 
             // UI 업데이트
-            updateUI();
+            document.getElementById("month").innerText = getMonthName(currentMonth);
+            document.getElementById("week").innerText = currentWeek;
+            console.log(`5. UI 업데이트 완료: ${getMonthName(currentMonth)} ${currentWeek}주차, 날짜: ${document.getElementById("date-range").innerText}`);
         }
 
-        // 새로 추가된 함수: 자연스러운 주차 계산 (Working Day 기준)
+        // 자연스러운 주차 계산 (Working Day 기준)
         function calculateWeekNumber() {
             // 현재 시작일(월요일)과 종료일(일요일)
             const weekStart = new Date(currentStartDate);
             const weekEnd = new Date(weekStart);
             weekEnd.setDate(weekStart.getDate() + 6);
+            console.log(`calculateWeekNumber - 기준일: ${weekStart.toLocaleDateString()}`);
 
             // Working Day(월~금) 검사
             const workingDays = [];
@@ -438,8 +469,12 @@
             let newMonthStart = false;
             for (const day of workingDays) {
                 if (day.getDate() === 1) {
-                    currentMonth = day.getMonth();
-                    currentYear = day.getFullYear();
+                    const newMonth = day.getMonth();
+                    const newYear = day.getFullYear();
+
+                    console.log(`새로운 달 시작 감지: ${newYear}년 ${newMonth+1}월 1일`);
+                    currentMonth = newMonth;
+                    currentYear = newYear;
                     currentWeek = 1;
                     newMonthStart = true;
                     break;
@@ -452,8 +487,12 @@
                 const midWeek = new Date(weekStart);
                 midWeek.setDate(weekStart.getDate() + 2); // 월요일 + 2 = 수요일
 
-                currentMonth = midWeek.getMonth();
-                currentYear = midWeek.getFullYear();
+                const midWeekMonth = midWeek.getMonth();
+                const midWeekYear = midWeek.getFullYear();
+
+                console.log(`중간 지점(수요일) 기준: ${midWeekYear}년 ${midWeekMonth+1}월 ${midWeek.getDate()}일`);
+                currentMonth = midWeekMonth;
+                currentYear = midWeekYear;
 
                 // 해당 월의 첫째 날
                 const firstDayOfMonth = new Date(currentYear, currentMonth, 1);
@@ -480,6 +519,8 @@
                     firstWeekBelongsToMonth = true;
                 }
 
+                console.log(`첫 주의 월요일: ${firstMondayOfMonth.toLocaleDateString()}, 현재 달에 속함: ${firstWeekBelongsToMonth}`);
+
                 // 주차 계산
                 let weeksFromStart;
                 if (firstWeekBelongsToMonth) {
@@ -498,6 +539,8 @@
                 if (currentWeek < 1) {
                     currentWeek = 1;
                 }
+
+                console.log(`계산된 주차: ${currentWeek}주차`);
             }
         }
 
@@ -539,6 +582,9 @@
             // 현재 시작일에서 7일 빼기
             currentStartDate.setDate(currentStartDate.getDate() - 7);
 
+            // 날짜 범위 먼저 업데이트 (currentStartDate 기준)
+            updateDateRange();
+
             // 월과 주차 업데이트
             updateMonthAndWeek();
 
@@ -562,6 +608,9 @@
 
             // 현재 시작일에서 7일 더하기
             currentStartDate.setDate(currentStartDate.getDate() + 7);
+
+            // 날짜 범위 먼저 업데이트 (currentStartDate 기준)
+            updateDateRange();
 
             // 월과 주차 업데이트
             updateMonthAndWeek();
@@ -599,8 +648,11 @@
             // 주차 업데이트
             document.getElementById("week").innerText = currentWeek;
 
-            // 날짜 범위 업데이트
+            // 날짜 범위 재확인 (주차와 월이 변경될 수 있으므로)
             updateDateRange();
+
+            // 디버깅 로그
+            console.log(`UI 업데이트: ${getMonthName(currentMonth)} ${currentWeek}주차, 날짜: ${document.getElementById("date-range").innerText}`);
         }
 
         // 새로 추가된 함수: 일정 데이터 초기화
@@ -636,17 +688,75 @@
 
         // Initialize everything when the page loads
         window.onload = function() {
-            // 현재 날짜 초기화
-            initializeCurrentDate();
-
-            loadSchedule();
-
-            // Set up file input listeners
+            // 설정 준비
             days.forEach(day => {
                 const fileInput = document.getElementById(`${day}-file`);
                 fileInput.addEventListener('change', function(e) {
                     handleFileSelect(e, day);
                 });
+            });
+
+            // 저장된 데이터 확인
+            db.ref("schedule").once("value", snapshot => {
+                const data = snapshot.val();
+                if (data) {
+                    console.log("저장된 데이터 로드:", data);
+                    // 저장된 연도값이 있으면 불러오기, 없으면 현재 연도 사용
+                    currentYear = data.year || new Date().getFullYear();
+
+                    // 월과 주차 정보 설정
+                    document.getElementById("month").innerText = data.month;
+                    document.getElementById("week").innerText = data.week;
+
+                    // 월과 주차 정보를 숫자로 변환
+                    currentMonth = getMonthNumber(data.month);
+                    currentWeek = parseInt(data.week);
+
+                    // 날짜 범위가 저장되어 있으면 파싱하여 사용
+                    if (data.dateRange) {
+                        // 날짜 범위 파싱하여 시작일 계산
+                        const dateRangeParts = data.dateRange.split(' ~ ');
+                        if (dateRangeParts.length === 2) {
+                            const startDateParts = dateRangeParts[0].split('.');
+                            if (startDateParts.length === 2) {
+                                const month = parseInt(startDateParts[0]) - 1; // 0-based month
+                                const day = parseInt(startDateParts[1]);
+
+                                // 시작일 설정
+                                currentStartDate = new Date(currentYear, month, day);
+
+                                // 날짜 범위 표시
+                                document.getElementById("date-range").innerText = data.dateRange;
+                                console.log(`1. 저장된 날짜 범위 사용: ${data.dateRange}`);
+                            } else {
+                                // 파싱 실패 시 현재 날짜 기준으로 초기화
+                                initializeCurrentDate();
+                            }
+                        } else {
+                            // 파싱 실패 시 현재 날짜 기준으로 초기화
+                            initializeCurrentDate();
+                        }
+                    } else {
+                        // 날짜 범위가 없으면 현재 날짜 기준으로 초기화
+                        initializeCurrentDate();
+                    }
+
+                    // 마지막 업데이트 정보 표시
+                    document.getElementById("lastUpdated").innerText = `Last Updated: ${data.lastUpdated}`;
+
+                    // 일정 데이터 표시
+                    displayScheduleData(data);
+                } else {
+                    console.log("저장된 데이터 없음, 현재 날짜 기준으로 초기화");
+                    // 데이터가 없는 경우 현재 날짜 기준으로 초기화
+                    initializeCurrentDate();
+                }
+
+                // 최종 UI 상태 확인
+                const finalMonth = document.getElementById("month").innerText;
+                const finalWeek = document.getElementById("week").innerText;
+                const finalDateRange = document.getElementById("date-range").innerText;
+                console.log(`최종 UI 상태: ${finalMonth} ${finalWeek}주차, 날짜: ${finalDateRange}`);
             });
         };
     </script>
