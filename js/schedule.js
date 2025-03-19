@@ -1,6 +1,5 @@
 /**
  * Schedule data management functionality
- * Refactored to use Firebase Storage for images
  */
 
 // Temporary storage for schedule data
@@ -20,34 +19,19 @@ function saveSchedule() {
         schedule[box.id] = box.innerHTML;
     });
 
-    // Save image metadata for each day
+    // Save images for each day
     days.forEach(day => {
         const dayImages = [];
         const imageContainer = document.getElementById(`${day}-images`);
 
         imageContainer.querySelectorAll('.image-item').forEach(item => {
             const fileName = item.querySelector('.image-filename').textContent;
-            const imageURL = item.querySelector('.image-url')?.value || '';
-            const storagePath = item.querySelector('.storage-path')?.value || '';
+            const imageData = item.querySelector('.image-data').value;
 
-            // Firebase Storage를 사용하는 경우
-            if (imageURL && storagePath) {
-                dayImages.push({
-                    fileName: fileName,
-                    url: imageURL,
-                    storagePath: storagePath
-                });
-            }
-            // 레거시 지원: 기존 base64 방식 이미지가 있는 경우
-            else {
-                const imageData = item.querySelector('.image-data')?.value;
-                if (imageData) {
-                    dayImages.push({
-                        fileName: fileName,
-                        data: imageData
-                    });
-                }
-            }
+            dayImages.push({
+                fileName: fileName,
+                data: imageData
+            });
         });
 
         images[day] = dayImages;
@@ -72,8 +56,7 @@ function saveSchedule() {
         lastUpdated
     }, (error) => {
         if (error) {
-            console.error("저장 오류:", error);
-            alert("일정 저장 실패: " + error.message);
+            alert("Failed to save schedule.");
         } else {
             // 현재 상태를 "last" 데이터로도 복사 (항상 최신 상태를 쉽게 불러올 수 있도록)
             db.ref("schedule").set({
@@ -86,14 +69,12 @@ function saveSchedule() {
                 lastUpdated
             }, (error) => {
                 if (error) {
-                    console.error("최신 일정 업데이트 실패:", error);
-                } else {
-                    console.log("일정 및 이미지 메타데이터 저장 완료");
+                    console.error("Failed to update last schedule:", error);
                 }
             });
 
             document.getElementById("lastUpdated").innerText = `Last Updated: ${lastUpdated}`;
-            alert("일정이 성공적으로 저장되었습니다.");
+            alert("Schedule saved successfully.");
 
             // Refresh the page to enter view mode
             location.reload();
@@ -117,34 +98,19 @@ function saveTempScheduleData() {
         tempScheduleData.schedule[box.id] = box.innerHTML;
     });
 
-    // 이미지 메타데이터 저장
+    // 이미지 저장
     days.forEach(day => {
         const dayImages = [];
         const imageContainer = document.getElementById(`${day}-images`);
 
         imageContainer.querySelectorAll('.image-item').forEach(item => {
             const fileName = item.querySelector('.image-filename').textContent;
-            const imageURL = item.querySelector('.image-url')?.value;
-            const storagePath = item.querySelector('.storage-path')?.value;
+            const imageData = item.querySelector('.image-data').value;
 
-            // Firebase Storage를 사용하는 경우
-            if (imageURL && storagePath) {
-                dayImages.push({
-                    fileName: fileName,
-                    url: imageURL,
-                    storagePath: storagePath
-                });
-            }
-            // 레거시 지원: 기존 base64 방식 이미지가 있는 경우
-            else {
-                const imageData = item.querySelector('.image-data')?.value;
-                if (imageData) {
-                    dayImages.push({
-                        fileName: fileName,
-                        data: imageData
-                    });
-                }
-            }
+            dayImages.push({
+                fileName: fileName,
+                data: imageData
+            });
         });
 
         tempScheduleData.images[day] = dayImages;
@@ -304,42 +270,25 @@ function displayScheduleData(data, loadMetadataOnly = false) {
 
                 data.images[day].forEach((img, index) => {
                     const imageItem = document.createElement('div');
-                    imageItem.className = 'image-item mb-2 flex items-center';
+                    imageItem.className = 'image-item mb-2';
 
-                    // URL 기반 이미지 (Firebase Storage)
-                    if (img.url && img.storagePath) {
-                        if (loadMetadataOnly) {
-                            // 이미지 ID 생성 (고유 식별자)
-                            imageItem.innerHTML = `
-                                <span class="image-filename cursor-pointer text-blue-500 underline"
-                                      onclick="showImagePopupFromURL('${img.fileName}', '${img.url}')">${img.fileName}</span>
-                                <input type="hidden" class="image-url" value="${img.url}">
-                                <input type="hidden" class="storage-path" value="${img.storagePath}">
-                            `;
-                        } else {
-                            // 편집 모드에서는 삭제 버튼 추가
-                            imageItem.innerHTML = `
-                                <span class="image-filename cursor-pointer text-blue-500 underline"
-                                      onclick="showImagePopupFromURL('${img.fileName}', '${img.url}')">${img.fileName}</span>
-                                <input type="hidden" class="image-url" value="${img.url}">
-                                <input type="hidden" class="storage-path" value="${img.storagePath}">
-                            `;
-                        }
-                    }
-                    // 레거시 지원: base64 데이터 (기존 이미지)
-                    else if (img.data) {
-                        if (loadMetadataOnly) {
-                            imageItem.innerHTML = `
-                                <span class="image-filename cursor-pointer text-blue-500 underline"
-                                      onclick="loadAndShowImage('${day}', ${index}, '${img.fileName}')">${img.fileName}</span>
-                            `;
-                        } else {
-                            imageItem.innerHTML = `
-                                <span class="image-filename cursor-pointer text-blue-500 underline"
-                                      onclick="showImagePopup('${img.fileName}', '${img.data}')">${img.fileName}</span>
-                                <input type="hidden" class="image-data" value="${img.data}">
-                            `;
-                        }
+                    // 성능 개선: 이미지 메타데이터만 표시하고, 클릭 시 실제 데이터 로드
+                    if (loadMetadataOnly) {
+                        // 이미지 ID 생성 (고유 식별자)
+                        const imageId = `${day}-img-${index}`;
+
+                        // In view mode, show clickable filenames for lazy loading
+                        imageItem.innerHTML = `
+                            <span class="image-filename cursor-pointer text-blue-500 underline"
+                                  onclick="loadAndShowImage('${day}', ${index}, '${img.fileName}')">${img.fileName}</span>
+                        `;
+                    } else {
+                        // 편집 모드 등에서는 이전 방식 유지 (이미지 데이터 포함)
+                        imageItem.innerHTML = `
+                            <span class="image-filename cursor-pointer text-blue-500 underline"
+                                  onclick="showImagePopup('${img.fileName}', '${img.data}')">${img.fileName}</span>
+                            <input type="hidden" class="image-data" value="${img.data}">
+                        `;
                     }
 
                     imageContainer.appendChild(imageItem);
@@ -389,304 +338,5 @@ function clearScheduleData() {
         const imageContainer = document.getElementById(`${day}-images`);
         imageContainer.innerHTML = '';
         imageContainer.classList.add('hidden');
-    });
-}
-
-/**
- * 레거시 이미지 데이터를 Storage로 마이그레이션
- * 기존 Base64 인코딩된 이미지를 Firebase Storage로 이동
- */
-function migrateImagesToStorage() {
-    if (!confirm("기존 이미지를 Firebase Storage로 마이그레이션하시겠습니까? 이 작업은 시간이 걸릴 수 있습니다.")) {
-        return;
-    }
-
-    showLoadingIndicator("기존 이미지 마이그레이션 중... (0%)");
-
-    // 디버깅을 위한 상태 변수
-    let totalImages = 0;
-    let processedImages = 0;
-    let successfulMigrations = 0;
-    let failedMigrations = 0;
-
-    // 모든 주차 데이터 불러오기
-    db.ref("weeks").once("value")
-        .then(snapshot => {
-            const weeksData = snapshot.val() || {};
-            const weekKeys = Object.keys(weeksData);
-
-            if (weekKeys.length === 0) {
-                closeLoadingIndicator();
-                alert("마이그레이션할 데이터가 없습니다.");
-                return;
-            }
-
-            console.log(`마이그레이션 시작: ${weekKeys.length}개 주차 데이터 발견`);
-
-            // 모든 이미지 개수 계산
-            weekKeys.forEach(weekKey => {
-                const weekData = weeksData[weekKey];
-                if (!weekData.images) return;
-
-                Object.keys(weekData.images).forEach(day => {
-                    const dayImages = weekData.images[day];
-                    if (!dayImages || !Array.isArray(dayImages)) return;
-
-                    dayImages.forEach(img => {
-                        if (img.data && !img.url) {
-                            totalImages++;
-                        }
-                    });
-                });
-            });
-
-            console.log(`총 ${totalImages}개 이미지 마이그레이션 필요`);
-
-            if (totalImages === 0) {
-                closeLoadingIndicator();
-                alert("마이그레이션할 이미지가 없습니다.");
-                return;
-            }
-
-            // 각 주차별 순차적으로 처리
-            const processWeek = async (weekIndex) => {
-                if (weekIndex >= weekKeys.length) {
-                    // 모든 주차 처리 완료
-                    console.log("마이그레이션 완료 결과:");
-                    console.log(`- 총 이미지: ${totalImages}`);
-                    console.log(`- 성공: ${successfulMigrations}`);
-                    console.log(`- 실패: ${failedMigrations}`);
-
-                    closeLoadingIndicator();
-
-                    if (failedMigrations > 0) {
-                        alert(`마이그레이션 완료: 총 ${totalImages}개 중 ${successfulMigrations}개 성공, ${failedMigrations}개 실패. 자세한 내용은 콘솔을 확인하세요.`);
-                    } else {
-                        alert(`마이그레이션 완료: 총 ${totalImages}개 이미지가 성공적으로 처리되었습니다.`);
-                    }
-
-                    // 페이지 새로고침
-                    location.reload();
-                    return;
-                }
-
-                const weekKey = weekKeys[weekIndex];
-                const weekData = weeksData[weekKey];
-
-                if (!weekData.images) {
-                    // 이미지가 없는 주차는 건너뛰기
-                    return processWeek(weekIndex + 1);
-                }
-
-                console.log(`${weekKey} 주차 처리 중...`);
-
-                // 해당 주차의 모든 요일 처리
-                const days = Object.keys(weekData.images);
-
-                for (let dayIndex = 0; dayIndex < days.length; dayIndex++) {
-                    const day = days[dayIndex];
-                    const dayImages = weekData.images[day];
-
-                    if (!dayImages || !Array.isArray(dayImages)) continue;
-
-                    // 각 이미지 처리
-                    for (let imgIndex = 0; imgIndex < dayImages.length; imgIndex++) {
-                        const img = dayImages[imgIndex];
-
-                        // base64 데이터가 있고 URL이 없는 경우만 마이그레이션
-                        if (img.data && !img.url) {
-                            try {
-                                await processSingleImage(img.data, weekKey, day, img.fileName, imgIndex);
-                                successfulMigrations++;
-                            } catch (error) {
-                                console.error(`[오류] ${weekKey}/${day}/${img.fileName} 마이그레이션 실패:`, error);
-                                failedMigrations++;
-                            }
-
-                            processedImages++;
-                            const percentComplete = Math.round((processedImages / totalImages) * 100);
-                            showLoadingIndicator(`기존 이미지 마이그레이션 중... (${percentComplete}%)`);
-                        }
-                    }
-                }
-
-                // 다음 주차 처리
-                return processWeek(weekIndex + 1);
-            };
-
-            // 마이그레이션 시작
-            processWeek(0);
-        })
-        .catch(error => {
-            console.error("주차 데이터 로드 실패:", error);
-            closeLoadingIndicator();
-            alert(`마이그레이션 실패: ${error.message}`);
-        });
-}
-
-/**
- * 단일 이미지를 스토리지로 마이그레이션
- * @param {string} base64Data - Base64 인코딩된 이미지 데이터
- * @param {string} weekKey - 주차 키 (ex: "2025-3-1")
- * @param {string} day - 요일
- * @param {string} fileName - 파일 이름
- * @param {number} index - 이미지 인덱스
- * @returns {Promise} - 마이그레이션 작업 Promise
- */
-function processSingleImage(base64Data, weekKey, day, fileName, index) {
-    return new Promise((resolve, reject) => {
-        try {
-            console.log(`이미지 처리 중: ${weekKey}/${day}/${fileName}`);
-
-            // 유효한 Base64 데이터인지 확인
-            if (!base64Data || typeof base64Data !== 'string') {
-                reject(new Error("유효하지 않은 이미지 데이터"));
-                return;
-            }
-
-            // Base64 데이터에서 헤더와 콘텐츠 분리
-            let base64Content;
-            let mimeType;
-
-            if (base64Data.startsWith('data:')) {
-                // 데이터 URL 형식 (예: "data:image/jpeg;base64,/9j/4AAQ...")
-                const parts = base64Data.split(',');
-                if (parts.length !== 2) {
-                    reject(new Error("잘못된 Base64 데이터 형식"));
-                    return;
-                }
-
-                mimeType = parts[0].split(':')[1].split(';')[0];
-                base64Content = parts[1];
-            } else {
-                // 순수 Base64 문자열인 경우 MIME 타입을 추측 (기본: JPEG)
-                base64Content = base64Data;
-                mimeType = 'image/jpeg';
-            }
-
-            // Base64를 Blob으로 변환
-            const byteString = atob(base64Content);
-            const arrayBuffer = new ArrayBuffer(byteString.length);
-            const ia = new Uint8Array(arrayBuffer);
-
-            for (let i = 0; i < byteString.length; i++) {
-                ia[i] = byteString.charCodeAt(i);
-            }
-
-            // 파일명이 없는 경우 기본 파일명 생성
-            const safeFileName = fileName || `image-${day}-${index}.jpg`;
-
-            // 확장자 지정
-            let finalFileName = safeFileName;
-            if (!finalFileName.includes('.')) {
-                const ext = mimeType.split('/')[1] || 'jpg';
-                finalFileName = `${finalFileName}.${ext}`;
-            }
-
-            const blob = new Blob([arrayBuffer], { type: mimeType });
-
-            // Firebase Storage에 업로드
-            const storagePath = `images/${weekKey}/${day}/${finalFileName}`;
-            const storageRef = storage.ref(storagePath);
-
-            storageRef.put(blob)
-                .then(snapshot => {
-                    console.log(`스토리지 업로드 성공: ${storagePath}`);
-                    return snapshot.ref.getDownloadURL();
-                })
-                .then(downloadURL => {
-                    console.log(`다운로드 URL 획득: ${downloadURL}`);
-
-                    // Realtime Database 업데이트 - URL 추가
-                    return db.ref(`weeks/${weekKey}/images/${day}/${index}`).update({
-                        url: downloadURL,
-                        storagePath: storagePath
-                    });
-                })
-                .then(() => {
-                    console.log(`데이터베이스 업데이트 성공: ${weekKey}/${day}/${index}`);
-
-                    // 성공적으로 처리 완료
-                    resolve({
-                        weekKey,
-                        day,
-                        index,
-                        fileName: finalFileName
-                    });
-                })
-                .catch(error => {
-                    console.error(`스토리지 업로드 또는 DB 업데이트 실패: ${error.message}`);
-                    reject(error);
-                });
-        } catch (error) {
-            console.error(`이미지 처리 중 예외 발생: ${error.message}`);
-            reject(error);
-        }
-    });
-}
-
-/**
- * Base64 인코딩된 이미지를 Firebase Storage로 마이그레이션
- * @param {string} base64Data - Base64 인코딩된 이미지 데이터
- * @param {string} weekKey - 주차 키 (ex: "2025-3-1")
- * @param {string} day - 요일
- * @param {string} fileName - 파일 이름
- * @param {number} index - 이미지 인덱스
- * @returns {Promise} - 마이그레이션 작업 Promise
- */
-function migrateBase64ImageToStorage(base64Data, weekKey, day, fileName, index) {
-    return new Promise((resolve, reject) => {
-        try {
-            // Base64 데이터에서 헤더 제거 (예: "data:image/jpeg;base64,")
-            const base64Content = base64Data.split(',')[1];
-            if (!base64Content) {
-                reject(new Error("Invalid base64 data"));
-                return;
-            }
-
-            // Base64를 Blob으로 변환
-            const byteString = atob(base64Content);
-            const mimeString = base64Data.split(',')[0].split(':')[1].split(';')[0];
-            const arrayBuffer = new ArrayBuffer(byteString.length);
-            const ia = new Uint8Array(arrayBuffer);
-
-            for (let i = 0; i < byteString.length; i++) {
-                ia[i] = byteString.charCodeAt(i);
-            }
-
-            const blob = new Blob([arrayBuffer], { type: mimeString });
-
-            // Firebase Storage에 업로드
-            const storagePath = `images/${weekKey}/${day}/${fileName}`;
-            const storageRef = storage.ref(storagePath);
-
-            storageRef.put(blob)
-                .then(snapshot => snapshot.ref.getDownloadURL())
-                .then(downloadURL => {
-                    // Realtime Database 업데이트 - URL 추가 및 기존 데이터 삭제
-                    db.ref(`weeks/${weekKey}/images/${day}/${index}`).update({
-                        url: downloadURL,
-                        storagePath: storagePath,
-                        data: null // 기존 base64 데이터 제거
-                    })
-                        .then(() => {
-                            resolve({
-                                weekKey,
-                                day,
-                                index,
-                                url: downloadURL,
-                                storagePath
-                            });
-                        })
-                        .catch(error => {
-                            reject(error);
-                        });
-                })
-                .catch(error => {
-                    reject(error);
-                });
-        } catch (error) {
-            reject(error);
-        }
     });
 }

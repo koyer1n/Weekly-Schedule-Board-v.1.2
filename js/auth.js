@@ -14,7 +14,6 @@ function authenticate() {
         isEditor = true;
         document.querySelectorAll('.editable').forEach(el => el.contentEditable = "true");
         document.getElementById("saveButton").classList.remove("hidden");
-        document.getElementById("migrateButton").classList.remove("hidden");
 
         // Show file upload buttons when in edit mode
         days.forEach(day => {

@@ -1,6 +1,5 @@
 /**
  * Image handling functionality for upload, display, and deletion
- * Refactored to use Firebase Storage instead of database for image storage
  */
 
 // 이미지 로딩 상태 표시를 위한 변수
@@ -16,120 +15,46 @@ function handleFileUpload(day) {
 }
 
 /**
- * Handle file selection and upload to Firebase Storage
+ * Handle file selection and display preview
  * @param {Event} event - The file input change event
  * @param {string} day - Day of the week
  */
 function handleFileSelect(event, day) {
     const files = event.target.files;
-    if (!files || files.length === 0) return;
-
-    showLoadingIndicator("이미지 업로드 중...");
-
     const imageContainer = document.getElementById(`${day}-images`);
-    const uploadPromises = [];
 
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
-        const fileName = file.name;
-        const fileSize = file.size;
+        const reader = new FileReader();
 
-        // 파일 크기 제한 (10MB)
-        if (fileSize > 10 * 1024 * 1024) {
-            alert(`파일 "${fileName}"이(가) 너무 큽니다. 10MB 미만의 파일만 업로드할 수 있습니다.`);
-            continue;
-        }
+        reader.onload = function(e) {
+            const imageData = e.target.result;
+            const fileName = file.name;
 
-        // Firebase Storage에 업로드
-        const uploadPromise = uploadImageToStorage(file, day)
-            .then(downloadURL => {
-                // Create image preview with metadata
-                const previewDiv = document.createElement('div');
-                previewDiv.className = 'image-item mb-2 flex items-center';
-                previewDiv.innerHTML = `
-                    <span class="image-filename cursor-pointer text-blue-500 underline"
-                          onclick="showImagePopupFromURL('${fileName}', '${downloadURL}')">${fileName}</span>
-                    <button class="delete-image-btn ml-2 text-red-500 hover:text-red-700"
-                            onclick="deleteImage(event, this)">
-                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
-                        </svg>
-                    </button>
-                    <input type="hidden" class="image-url" value="${downloadURL}">
-                    <input type="hidden" class="storage-path" value="${day}/${fileName}">
-                `;
+            // Create image preview with delete button
+            const previewDiv = document.createElement('div');
+            previewDiv.className = 'image-item mb-2 flex items-center';
+            previewDiv.innerHTML = `
+                <span class="image-filename mr-2">${fileName}</span>
+                <button class="delete-image-btn ml-2 text-red-500 hover:text-red-700"
+                        onclick="deleteImage(event, this)">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+                <input type="hidden" class="image-data" value="${imageData}">
+            `;
 
-                imageContainer.appendChild(previewDiv);
-                imageContainer.classList.remove('hidden');
-                return downloadURL;
-            })
-            .catch(error => {
-                console.error("Image upload failed:", error);
-                alert(`이미지 업로드 실패: ${error.message}`);
-            });
+            imageContainer.appendChild(previewDiv);
+            imageContainer.classList.remove('hidden');
+        };
 
-        uploadPromises.push(uploadPromise);
+        reader.readAsDataURL(file);
     }
-
-    // 모든 업로드가 완료되면 로딩 인디케이터를 닫음
-    Promise.all(uploadPromises.filter(p => p))
-        .then(() => closeLoadingIndicator())
-        .catch(error => {
-            console.error("Some uploads failed:", error);
-            closeLoadingIndicator();
-        });
 }
 
 /**
- * Upload an image file to Firebase Storage
- * @param {File} file - The file to upload
- * @param {string} day - Day of the week for organizing storage
- * @returns {Promise<string>} - Promise resolving to the download URL
- */
-function uploadImageToStorage(file, day) {
-    return new Promise((resolve, reject) => {
-        try {
-            // 현재 연도, 월, 주차를 기준으로 저장 경로 생성
-            const dataKey = `${currentYear}-${currentMonth+1}-${currentWeek}`;
-            const storagePath = `images/${dataKey}/${day}/${file.name}`;
-
-            // Firebase Storage에 업로드
-            const storageRef = storage.ref(storagePath);
-            const uploadTask = storageRef.put(file);
-
-            uploadTask.on('state_changed',
-                // 진행 상태 업데이트
-                (snapshot) => {
-                    const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                    console.log(`Upload progress: ${progress.toFixed(2)}%`);
-                },
-                // 오류 처리
-                (error) => {
-                    console.error("Upload failed:", error);
-                    reject(error);
-                },
-                // 완료 처리
-                () => {
-                    // 업로드 완료 후 다운로드 URL 가져오기
-                    uploadTask.snapshot.ref.getDownloadURL()
-                        .then(downloadURL => {
-                            resolve(downloadURL);
-                        })
-                        .catch(error => {
-                            console.error("Failed to get download URL:", error);
-                            reject(error);
-                        });
-                }
-            );
-        } catch (error) {
-            console.error("Error in uploadImageToStorage:", error);
-            reject(error);
-        }
-    });
-}
-
-/**
- * Delete an image from the container and Firebase Storage
+ * Delete an image from the container
  * @param {Event} event - The click event
  * @param {HTMLElement} button - The delete button element
  */
@@ -141,22 +66,7 @@ function deleteImage(event, button) {
         const imageItem = button.closest('.image-item');
         const imageContainer = imageItem.parentNode;
 
-        // Firebase Storage에서도 삭제
-        const storagePath = imageItem.querySelector('.storage-path')?.value;
-        if (storagePath) {
-            const storageRef = storage.ref(storagePath);
-
-            storageRef.delete()
-                .then(() => {
-                    console.log(`Successfully deleted image from storage: ${storagePath}`);
-                })
-                .catch(error => {
-                    console.error(`Failed to delete image from storage: ${error.message}`);
-                    // UI에서는 계속 삭제 진행
-                });
-        }
-
-        // Remove the image item from UI
+        // Remove the image item
         imageContainer.removeChild(imageItem);
 
         // If no more images, hide the container
@@ -201,7 +111,7 @@ function closeLoadingIndicator() {
 }
 
 /**
- * 이미지 URL을 이용해 저장된 이미지 표시
+ * 지연 로딩: 이미지 ID로 실제 이미지 데이터를 불러와 팝업으로 표시
  * @param {string} day - 요일
  * @param {number} index - 이미지 인덱스
  * @param {string} fileName - 파일 이름
@@ -210,76 +120,74 @@ function loadAndShowImage(day, index, fileName) {
     // 로딩 표시
     showLoadingIndicator(`"${fileName}" 로딩 중...`);
 
-    // 현재 연도, 월, 주차를 기준으로 데이터 키 생성
-    const dataKey = `${currentYear}-${currentMonth+1}-${currentWeek}`;
+    // 캐시된 이미지 데이터 확인
+    if (currentWeekImages && currentWeekImages[day] && currentWeekImages[day][index]) {
+        const imgData = currentWeekImages[day][index].data;
 
-    // Firebase에서 해당 이미지 URL 불러오기
-    db.ref(`weeks/${dataKey}/images/${day}/${index}`).once("value", snapshot => {
-        const imageData = snapshot.val();
-
-        if (imageData) {
+        if (imgData) {
             // 로딩 인디케이터 닫기
             closeLoadingIndicator();
 
-            // URL이 있으면 URL로 표시 (Storage 방식)
-            if (imageData.url) {
-                showImagePopupFromURL(fileName, imageData.url);
+            // 이미지 팝업 표시
+            showImagePopup(fileName, imgData);
+            return;
+        }
+    }
+
+    // 현재 연도, 월, 주차를 기준으로 데이터 키 생성
+    const dataKey = `${currentYear}-${currentMonth+1}-${currentWeek}`;
+
+    // Firebase에서 해당 이미지 데이터만 불러오기
+    db.ref(`weeks/${dataKey}/images/${day}/${index}`).once("value", snapshot => {
+        const imageData = snapshot.val();
+
+        // 로딩 인디케이터 닫기
+        closeLoadingIndicator();
+
+        if (imageData && imageData.data) {
+            // 이미지 데이터를 캐시에 저장
+            if (!currentWeekImages[day]) {
+                currentWeekImages[day] = [];
             }
-            // Base64 데이터가 있으면 Base64로 표시 (기존 방식)
-            else if (imageData.data) {
-                showImagePopup(fileName, imageData.data);
-            } else {
-                alert(`이미지 데이터를 불러올 수 없습니다: ${fileName}`);
+
+            if (!currentWeekImages[day][index]) {
+                currentWeekImages[day][index] = {};
             }
+
+            currentWeekImages[day][index].data = imageData.data;
+
+            // 이미지 팝업 표시
+            showImagePopup(fileName, imageData.data);
         } else {
-            // 해당 주차에서 URL을 찾지 못한 경우 기본 스케줄에서 시도
+            // 해당 주차에서 데이터를 찾지 못한 경우 기본 스케줄에서 시도
             db.ref(`schedule/images/${day}/${index}`).once("value", snapshot => {
                 const defaultImageData = snapshot.val();
-                closeLoadingIndicator();
 
-                if (defaultImageData) {
-                    if (defaultImageData.url) {
-                        showImagePopupFromURL(fileName, defaultImageData.url);
-                    } else if (defaultImageData.data) {
-                        showImagePopup(fileName, defaultImageData.data);
-                    } else {
-                        alert(`이미지 데이터를 불러올 수 없습니다: ${fileName}`);
+                if (defaultImageData && defaultImageData.data) {
+                    // 캐시에 저장
+                    if (!currentWeekImages[day]) {
+                        currentWeekImages[day] = [];
                     }
+
+                    if (!currentWeekImages[day][index]) {
+                        currentWeekImages[day][index] = {};
+                    }
+
+                    currentWeekImages[day][index].data = defaultImageData.data;
+
+                    // 이미지 팝업 표시
+                    showImagePopup(fileName, defaultImageData.data);
                 } else {
+                    // 이미지를 찾지 못한 경우
                     alert(`이미지 데이터를 불러올 수 없습니다: ${fileName}`);
                 }
             });
         }
-    }).catch(error => {
-        console.error("Error loading image:", error);
-        closeLoadingIndicator();
-        alert(`이미지 로딩 중 오류 발생: ${error.message}`);
     });
 }
 
 /**
- * Show a popup with the image from URL
- * @param {string} fileName - Name of the image file
- * @param {string} imageURL - URL of the image
- */
-function showImagePopupFromURL(fileName, imageURL) {
-    const popup = document.createElement('div');
-    popup.className = 'fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50';
-    popup.id = 'image-popup';
-    popup.onclick = closeImagePopup;
-
-    popup.innerHTML = `
-        <div class="bg-white p-4 rounded-lg max-w-4xl max-h-screen overflow-auto">
-            <h3 class="text-xl font-bold mb-2">${fileName}</h3>
-            <img src="${imageURL}" alt="${fileName}" class="max-w-full">
-        </div>
-    `;
-
-    document.body.appendChild(popup);
-}
-
-/**
- * 레거시 지원: base64 데이터로 팝업 표시 (기존 이미지 지원용)
+ * Show a popup with the full image
  * @param {string} fileName - Name of the image file
  * @param {string} imageData - Base64 encoded image data
  */
